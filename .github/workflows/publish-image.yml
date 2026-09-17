@@ -1,0 +1,44 @@
+name: Publish image (Goose Lab fork)
+
+# Goose Lab fork only: builds the patched kamal-proxy (AEAD-only TLS 1.2 cipher
+# suites, see internal/server/server.go httpsTLSConfig) and pushes it to GHCR so
+# the shared OVH host can run `ghcr.io/goose-lab/kamal-proxy:<tag>`
+# (square-habitat GHT-1731). Tests run first; a failing suite publishes nothing.
+on:
+  push:
+    tags: [ "v*-aead*" ]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: gofmt
+        run: test -z "$(gofmt -l ./internal ./cmd)" || { gofmt -l ./internal ./cmd; exit 1; }
+
+      - name: Test
+        run: make test
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          build-args: VERSION=${{ github.ref_name }}
+          tags: ghcr.io/goose-lab/kamal-proxy:${{ github.ref_name }}
